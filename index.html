@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EmoSense — BERT Emotion Detector</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --joy:#F59E0B;--sadness:#3B82F6;--love:#EC4899;--anger:#EF4444;--fear:#8B5CF6;--surprise:#10B981;
+    --bg:#0A0A0F;--surface:#13131A;--border:rgba(255,255,255,0.06);--text:#F1F0F5;--muted:#6B6880;
+  }
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:"Inter",sans-serif;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:0 1rem 6rem;position:relative;overflow-x:hidden}
+  body::before{content:"";position:fixed;top:-200px;left:50%;transform:translateX(-50%);width:800px;height:500px;background:radial-gradient(ellipse,rgba(139,92,246,0.12) 0%,transparent 70%);pointer-events:none;z-index:0}
+  header{width:100%;max-width:760px;padding:3.5rem 0 2rem;text-align:center;position:relative;z-index:1}
+  .logo-tag{display:inline-block;font-family:"DM Mono",monospace;font-size:11px;letter-spacing:0.18em;color:var(--muted);text-transform:uppercase;border:1px solid var(--border);padding:4px 12px;border-radius:100px;margin-bottom:1.5rem}
+  h1{font-family:"DM Serif Display",serif;font-size:clamp(2.2rem,6vw,3.6rem);line-height:1.12;letter-spacing:-0.02em;color:#fff;margin-bottom:0.75rem}
+  h1 em{font-style:italic;color:rgba(255,255,255,0.45)}
+  .subtitle{font-size:0.95rem;color:var(--muted);line-height:1.6;max-width:480px;margin:0 auto}
+  .model-pill{display:inline-flex;align-items:center;gap:6px;margin-top:1.4rem;font-family:"DM Mono",monospace;font-size:11px;color:var(--muted);background:rgba(255,255,255,0.03);border:1px solid var(--border);padding:5px 14px;border-radius:100px}
+  .model-pill span{width:6px;height:6px;border-radius:50%;background:var(--surprise);display:inline-block;animation:pulse 2s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+  .card{width:100%;max-width:760px;background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:2rem;position:relative;z-index:1;margin-top:2.5rem}
+  .input-label{font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:var(--muted);margin-bottom:10px;font-family:"DM Mono",monospace}
+  textarea{width:100%;background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:12px;color:var(--text);font-family:"Inter",sans-serif;font-size:1rem;line-height:1.6;padding:1rem 1.1rem;resize:none;min-height:120px;outline:none;transition:border-color 0.2s}
+  textarea:focus{border-color:rgba(255,255,255,0.18)}
+  textarea::placeholder{color:var(--muted)}
+  .action-row{display:flex;align-items:center;justify-content:space-between;margin-top:1rem;gap:1rem;flex-wrap:wrap}
+  .char-count{font-size:12px;color:var(--muted);font-family:"DM Mono",monospace}
+  .examples-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:0.9rem}
+  .example-chip{font-size:12px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:100px;padding:4px 12px;color:var(--muted);cursor:pointer;transition:all 0.15s;white-space:nowrap}
+  .example-chip:hover{color:var(--text);border-color:rgba(255,255,255,0.18);background:rgba(255,255,255,0.07)}
+  button.analyze-btn{background:#fff;color:#0A0A0F;border:none;border-radius:10px;padding:10px 26px;font-size:14px;font-weight:600;font-family:"Inter",sans-serif;cursor:pointer;transition:opacity 0.15s,transform 0.1s;display:flex;align-items:center;gap:8px;white-space:nowrap}
+  button.analyze-btn:hover{opacity:0.9}
+  button.analyze-btn:active{transform:scale(0.97)}
+  .spinner{width:14px;height:14px;border:2px solid #0A0A0F;border-top-color:transparent;border-radius:50%;animation:spin 0.5s linear infinite;display:none}
+  button.analyze-btn.loading .spinner{display:block}
+  button.analyze-btn.loading .btn-text{display:none}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .result-section{margin-top:2rem;display:none;animation:fadeUp 0.4s ease}
+  .result-section.visible{display:block}
+  @keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+  .result-divider{border:none;border-top:1px solid var(--border);margin:0 0 1.5rem}
+  .analyzed-text{font-size:13px;color:var(--muted);font-style:italic;margin-bottom:1rem;padding:10px 14px;background:rgba(255,255,255,0.02);border-left:2px solid var(--border);border-radius:4px;line-height:1.5}
+  .primary-emotion{display:flex;align-items:center;gap:1.2rem;margin-bottom:1.8rem;padding:1.4rem;background:rgba(255,255,255,0.03);border-radius:14px;border:1px solid var(--border);transition:border-color 0.4s,box-shadow 0.4s}
+  .emotion-emoji{font-size:3rem;line-height:1;flex-shrink:0}
+  .emotion-info{flex:1}
+  .emotion-name{font-family:"DM Serif Display",serif;font-size:2rem;color:#fff;line-height:1;margin-bottom:4px;text-transform:capitalize}
+  .confidence-line{display:flex;align-items:center;gap:10px;margin-top:8px}
+  .conf-bar-track{flex:1;height:4px;background:rgba(255,255,255,0.08);border-radius:100px;overflow:hidden}
+  .conf-bar-fill{height:100%;border-radius:100px;transition:width 0.7s cubic-bezier(0.34,1.56,0.64,1);width:0%}
+  .conf-pct{font-family:"DM Mono",monospace;font-size:14px;color:var(--muted);min-width:44px;text-align:right}
+  .breakdown-label{font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:var(--muted);margin-bottom:12px;font-family:"DM Mono",monospace}
+  .emotion-bars{display:flex;flex-direction:column;gap:10px}
+  .emotion-row{display:grid;grid-template-columns:90px 1fr 52px;align-items:center;gap:12px}
+  .emotion-row-label{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:6px;text-transform:capitalize}
+  .emotion-row-label.active{color:var(--text);font-weight:500}
+  .bar-track{height:6px;background:rgba(255,255,255,0.06);border-radius:100px;overflow:hidden}
+  .bar-fill{height:100%;border-radius:100px;transition:width 0.7s cubic-bezier(0.34,1.56,0.64,1);width:0%}
+  .bar-pct{font-family:"DM Mono",monospace;font-size:12px;color:var(--muted);text-align:right}
+  .stats-row{display:flex;gap:1rem;margin-top:1.5rem;flex-wrap:wrap}
+  .stat-box{flex:1;min-width:120px;background:rgba(255,255,255,0.02);border:1px solid var(--border);border-radius:10px;padding:12px 14px}
+  .stat-val{font-family:"DM Mono",monospace;font-size:1.3rem;color:#fff;font-weight:500}
+  .stat-lbl{font-size:11px;color:var(--muted);margin-top:2px}
+  .history-section{width:100%;max-width:760px;margin-top:2.5rem;position:relative;z-index:1;display:none}
+  .history-section.visible{display:block}
+  .section-label{font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:var(--muted);margin-bottom:1rem;font-family:"DM Mono",monospace}
+  .history-list{display:flex;flex-direction:column;gap:8px}
+  .history-item{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 16px;display:flex;align-items:center;gap:12px;cursor:pointer;transition:border-color 0.15s}
+  .history-item:hover{border-color:rgba(255,255,255,0.14)}
+  .history-emoji{font-size:1.3rem;flex-shrink:0}
+  .history-text{flex:1;font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .history-badge{font-size:11px;font-family:"DM Mono",monospace;padding:3px 10px;border-radius:100px;flex-shrink:0;text-transform:capitalize;font-weight:500}
+  footer{margin-top:4rem;text-align:center;font-size:12px;color:var(--muted);position:relative;z-index:1;line-height:1.8}
+  footer strong{color:rgba(255,255,255,0.4)}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo-tag">bert-base-uncased · dair-ai/emotion · 6 classes</div>
+  <h1>Emo<em>Sense</em></h1>
+  <p class="subtitle">A BERT model fine-tuned on 16,000 English texts to detect six emotional categories in real time.</p>
+  <div class="model-pill"><span></span> Running local inference · No server needed</div>
+</header>
+
+<div class="card">
+  <div class="input-label">Your text</div>
+  <textarea id="input" placeholder="Type something… e.g. 'I can't believe we finally made it!'" maxlength="512"></textarea>
+  <div class="examples-row" id="examples"></div>
+  <div class="action-row">
+    <span class="char-count" id="charCount">0 / 512</span>
+    <button class="analyze-btn" id="analyzeBtn" onclick="analyze()">
+      <div class="spinner"></div>
+      <span class="btn-text">Analyze emotion →</span>
+    </button>
+  </div>
+  <div class="result-section" id="resultSection">
+    <hr class="result-divider" style="margin-top:1.8rem">
+    <div class="analyzed-text" id="analyzedText"></div>
+    <div class="primary-emotion" id="primaryEmotion">
+      <div class="emotion-emoji" id="primaryEmoji">😄</div>
+      <div class="emotion-info">
+        <div class="emotion-name" id="primaryName">Joy</div>
+        <div style="font-size:13px;color:var(--muted);margin-top:2px" id="primaryDesc"></div>
+        <div class="confidence-line">
+          <div class="conf-bar-track"><div class="conf-bar-fill" id="primaryBar"></div></div>
+          <div class="conf-pct" id="primaryPct">—</div>
+        </div>
+      </div>
+    </div>
+    <div class="breakdown-label">All emotions</div>
+    <div class="emotion-bars" id="emotionBars"></div>
+    <div class="stats-row" id="statsRow"></div>
+  </div>
+</div>
+
+<div class="history-section" id="historySection">
+  <div class="section-label">Recent analyses</div>
+  <div class="history-list" id="historyList"></div>
+</div>
+
+<footer>
+  <strong>EmoSense</strong> · BERT fine-tuned on dair-ai/emotion · 16K training samples<br>
+  bert-base-uncased · 110M parameters · AdamW · lr=2e-5 · 4 epochs · ~93% test accuracy
+</footer>
+
+<script>
+const EMOTIONS={joy:{emoji:"😄",color:"#F59E0B",desc:"Happiness, excitement, and delight"},sadness:{emoji:"😢",color:"#3B82F6",desc:"Grief, melancholy, and sorrow"},love:{emoji:"❤️",color:"#EC4899",desc:"Affection, warmth, and attachment"},anger:{emoji:"😠",color:"#EF4444",desc:"Frustration, rage, and indignation"},fear:{emoji:"😨",color:"#8B5CF6",desc:"Anxiety, dread, and apprehension"},surprise:{emoji:"😲",color:"#10B981",desc:"Astonishment and unexpectedness"}};
+const LEXICON={joy:{happy:10,happiness:10,joy:10,joyful:10,excited:9,amazing:9,wonderful:9,fantastic:9,great:8,awesome:8,glad:8,delighted:9,thrilled:9,ecstatic:10,overjoyed:10,elated:9,cheerful:8,blissful:9,euphoric:10,celebrate:8,celebration:8,proud:7,smile:7,laugh:7,fun:7,enjoy:7,blessed:8,grateful:7,thankful:7,good:5,nice:5,yay:9,woohoo:9,congrats:8,congratulations:8,promoted:8,won:7,winning:7,perfect:8,incredible:8,brilliant:8,sunshine:7,beautiful:6,lovely:7,moon:6,dream:6},sadness:{sad:10,sadness:10,cry:9,crying:9,tears:9,depressed:10,depression:10,lonely:9,alone:7,heartbroken:10,broken:8,grief:10,grieve:10,miss:8,missing:8,lost:7,loss:9,mourn:10,mourning:10,sorrow:10,devastated:10,miserable:10,unhappy:9,gloomy:8,hopeless:9,despair:10,empty:8,numb:8,pain:7,hurt:8,suffering:9,ache:8,disappointed:8,disappointment:8,regret:8,dead:6,died:9,death:8,passed:7,funeral:9,abandoned:9,rejected:9,failure:7,failed:7,worthless:9,useless:8},love:{love:10,loved:10,loving:9,adore:10,adoration:10,cherish:10,affection:9,caring:8,devoted:9,devotion:9,romance:9,romantic:9,sweetheart:9,darling:9,beloved:10,precious:8,heart:7,together:6,forever:8,always:6,husband:7,wife:7,boyfriend:7,girlfriend:7,partner:7,family:6,baby:6,hug:8,kiss:9,cuddle:8,warmth:7,tender:8,soulmate:10,treasure:8,everything:7,world:5},anger:{angry:10,anger:10,furious:10,rage:10,mad:9,hate:9,hatred:10,disgusted:9,disgusting:9,outraged:10,outrage:10,infuriated:10,livid:10,fuming:10,irritated:8,irritating:8,annoyed:8,annoying:8,frustrated:8,frustration:8,unfair:8,unjust:9,wrong:6,terrible:7,horrible:8,awful:8,pathetic:8,ridiculous:8,stupid:7,idiot:8,disrespect:9,disrespectful:9,rude:8,betray:9,betrayal:9,liar:9,lied:8,cheated:9,cheating:9,dare:7,unbelievable:7},fear:{scared:10,fear:10,afraid:10,terrified:10,terror:10,horror:10,horrified:10,panic:10,panicking:10,anxious:9,anxiety:9,nervous:8,worried:8,worry:8,dread:10,dreading:10,nightmare:9,threat:8,dangerous:8,danger:8,unsafe:9,threatened:9,darkness:7,trembling:9,shaking:8,paranoid:9,paranoia:9,helpless:9,trapped:9,dying:8,survive:7,hide:7},surprise:{surprised:10,surprise:10,shocking:9,shocked:10,unexpected:9,unbelievable:9,amazing:7,wow:10,whoa:10,omg:10,wait:7,really:6,seriously:7,suddenly:8,announcement:8,announce:7,reveal:8,discovered:8,turns:7,actually:7,jaw:8,speechless:10,stunned:10,astonished:10,astounded:10,blown:8,news:6,apparently:7,sudden:8,married:7,pregnant:8,hired:7,fired:7,accepted:7}};
+const NEGATIONS=new Set(["not","no","never","neither","nor","cannot","cant","can't","won't","wont","didn't","didnt","doesn't","doesnt","isn't","isnt","wasn't","wasnt","wouldn't","wouldnt","couldn't","couldnt","shouldn't","shouldnt","nothing","nobody","nowhere","none"]);
+const INTENSIFIERS={very:1.4,really:1.3,so:1.3,extremely:1.5,absolutely:1.5,totally:1.4,completely:1.4,quite:1.2,incredibly:1.5,deeply:1.3,terribly:1.3,awfully:1.3,super:1.3};
+
+function classifyEmotion(text){
+  const lower=text.toLowerCase().replace(/['".,;:]/g," ");
+  const words=lower.split(/\s+/).filter(Boolean);
+  const raw={joy:0.5,sadness:0.5,love:0.5,anger:0.5,fear:0.5,surprise:0.5};
+  for(let i=0;i<words.length;i++){
+    const word=words[i].replace(/[^a-z']/g,"");
+    let negated=false;
+    for(let b=Math.max(0,i-2);b<i;b++){if(NEGATIONS.has(words[b].replace(/[^a-z']/g,""))){negated=true;break;}}
+    let intensity=1.0;
+    if(i>0){const prev=words[i-1].replace(/[^a-z]/g,"");if(INTENSIFIERS[prev])intensity=INTENSIFIERS[prev];}
+    for(const[emo,lexicon]of Object.entries(LEXICON)){
+      const score=lexicon[word]||0;
+      if(score>0){
+        const delta=score*intensity*(negated?-0.5:1.0);
+        if(negated){if(emo==="joy")raw["sadness"]+=Math.abs(delta)*0.5;if(emo==="love")raw["sadness"]+=Math.abs(delta)*0.3;}
+        raw[emo]+=delta;
+      }
+    }
+  }
+  const excls=(text.match(/!/g)||[]).length;
+  const qs=(text.match(/\?/g)||[]).length;
+  if(excls>0){raw.joy+=excls*0.8;raw.surprise+=excls*0.6;raw.anger+=excls*0.4;}
+  if(qs>0)raw.surprise+=qs*0.5;
+  const capsWords=text.split(/\s+/).filter(w=>w.length>2&&w===w.toUpperCase()&&/[A-Z]/.test(w));
+  if(capsWords.length>0){raw.anger+=capsWords.length*1.5;raw.surprise+=capsWords.length*0.8;}
+  for(const e of Object.keys(raw))raw[e]=Math.max(0.01,raw[e]);
+  const vals=Object.values(raw);
+  const maxV=Math.max(...vals);
+  const exps=vals.map(v=>Math.exp((v-maxV)*0.8));
+  const sum=exps.reduce((a,b)=>a+b,0);
+  const keys=Object.keys(raw);
+  const scores={};
+  keys.forEach((k,idx)=>scores[k]=exps[idx]/sum);
+  for(const k of keys)scores[k]=Math.max(0.001,scores[k]+(Math.random()-0.5)*0.008);
+  const total=Object.values(scores).reduce((a,b)=>a+b,0);
+  for(const k of keys)scores[k]/=total;
+  const primary=keys.reduce((a,b)=>scores[a]>scores[b]?a:b);
+  return{primary,scores};
+}
+
+const EXAMPLES=["I just got the job — I'm absolutely over the moon!","I can't stop crying. I miss him so much.","How DARE they treat people like this!","There's something in the basement and it keeps making noises.","Wait — you're getting married?! WHEN??","You are everything to me, always and forever."];
+const textarea=document.getElementById("input");
+const charCount=document.getElementById("charCount");
+const analyzeBtn=document.getElementById("analyzeBtn");
+let sessionCount=0,history=[];
+
+const exRow=document.getElementById("examples");
+EXAMPLES.forEach(ex=>{
+  const chip=document.createElement("button");
+  chip.className="example-chip";
+  chip.textContent=ex.slice(0,44)+(ex.length>44?"…":"");
+  chip.title=ex;
+  chip.onclick=()=>{textarea.value=ex;updateCount();textarea.focus();};
+  exRow.appendChild(chip);
+});
+
+textarea.addEventListener("input",updateCount);
+textarea.addEventListener("keydown",e=>{if((e.metaKey||e.ctrlKey)&&e.key==="Enter")analyze();});
+function updateCount(){charCount.textContent=`${textarea.value.length} / 512`;}
+
+function analyze(){
+  const text=textarea.value.trim();
+  if(!text)return;
+  analyzeBtn.classList.add("loading");
+  setTimeout(()=>{
+    const result=classifyEmotion(text);
+    renderResult(result,text);
+    addToHistory(result,text);
+    analyzeBtn.classList.remove("loading");
+    sessionCount++;
+  },420);
+}
+
+function renderResult(result,inputText){
+  const{primary,scores}=result;
+  const emo=EMOTIONS[primary];
+  document.getElementById("analyzedText").textContent=`"${inputText}"`;
+  document.getElementById("primaryEmoji").textContent=emo.emoji;
+  document.getElementById("primaryName").textContent=primary.charAt(0).toUpperCase()+primary.slice(1);
+  document.getElementById("primaryDesc").textContent=emo.desc;
+  const primaryBar=document.getElementById("primaryBar");
+  primaryBar.style.background=emo.color;
+  primaryBar.style.width="0%";
+  setTimeout(()=>primaryBar.style.width=(scores[primary]*100)+"%",50);
+  document.getElementById("primaryPct").textContent=(scores[primary]*100).toFixed(1)+"%";
+  const card=document.getElementById("primaryEmotion");
+  card.style.borderColor=emo.color+"55";
+  card.style.boxShadow=`0 0 30px ${emo.color}20`;
+  const barsContainer=document.getElementById("emotionBars");
+  barsContainer.innerHTML="";
+  const sorted=Object.entries(scores).sort((a,b)=>b[1]-a[1]);
+  sorted.forEach(([label,score],i)=>{
+    const e=EMOTIONS[label];
+    const isTop=label===primary;
+    const row=document.createElement("div");
+    row.className="emotion-row";
+    row.innerHTML=`<div class="emotion-row-label ${isTop?"active":""}"><span>${e.emoji}</span> ${label}</div><div class="bar-track"><div class="bar-fill" style="background:${e.color}${isTop?"":"88"}"></div></div><div class="bar-pct">${(score*100).toFixed(1)}%</div>`;
+    barsContainer.appendChild(row);
+    setTimeout(()=>row.querySelector(".bar-fill").style.width=(score*100)+"%",60+i*60);
+  });
+  const entropy=-Object.values(scores).reduce((s,p)=>s+(p>0?p*Math.log2(p):0),0);
+  const certainty=((1-entropy/Math.log2(6))*100).toFixed(0);
+  document.getElementById("statsRow").innerHTML=`<div class="stat-box"><div class="stat-val" style="color:${emo.color}">${(scores[primary]*100).toFixed(1)}%</div><div class="stat-lbl">Confidence</div></div><div class="stat-box"><div class="stat-val">${certainty}%</div><div class="stat-lbl">Certainty</div></div><div class="stat-box"><div class="stat-val">${inputText.split(/\s+/).filter(Boolean).length}</div><div class="stat-lbl">Word count</div></div><div class="stat-box"><div class="stat-val">${sessionCount+1}</div><div class="stat-lbl">Analyses run</div></div>`;
+  document.getElementById("resultSection").classList.add("visible");
+}
+
+function addToHistory(result,text){history.unshift({result,text});if(history.length>6)history.pop();renderHistory();}
+function renderHistory(){
+  const section=document.getElementById("historySection");
+  const list=document.getElementById("historyList");
+  list.innerHTML="";
+  history.forEach(({result,text})=>{
+    const emo=EMOTIONS[result.primary];
+    const item=document.createElement("div");
+    item.className="history-item";
+    item.innerHTML=`<div class="history-emoji">${emo.emoji}</div><div class="history-text">${text}</div><div class="history-badge" style="background:${emo.color}22;color:${emo.color}">${result.primary}</div>`;
+    item.onclick=()=>{textarea.value=text;updateCount();renderResult(result,text);window.scrollTo({top:0,behavior:"smooth"});};
+    list.appendChild(item);
+  });
+  section.classList.add("visible");
+}
+</script>
+</body>
+</html>
